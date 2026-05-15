@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Circle Builder</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0e0e10;
+    color: #e8e8ec;
+    font-family: 'DM Mono', monospace;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: 240px;
+    min-width: 240px;
+    background: #18181c;
+    border-right: 1px solid #2a2a30;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 100;
+  }
+
+  .s-section { padding: 14px 16px; border-bottom: 1px solid #2a2a30; }
+
+  .s-label {
+    font-size: 9px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: #6b6b78;
+    margin-bottom: 10px;
+  }
+
+  .size-row { display: flex; gap: 6px; }
+
+  .size-btn {
+    flex: 1;
+    border: 1px solid #2a2a30;
+    background: transparent;
+    color: #e8e8ec;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 7px 4px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background .15s, border-color .15s;
+  }
+  .size-btn:hover { background: #222228; }
+  .size-btn.active { border-color: #e8e8ec; background: #222228; }
+
+  .text-input {
+    width: 100%;
+    background: #111115;
+    border: 1px solid #2a2a30;
+    border-radius: 4px;
+    color: #e8e8ec;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    resize: none;
+    transition: border-color .15s;
+  }
+  .text-input:focus { border-color: #6b6b78; }
+
+  .user-grid { display: flex; flex-direction: column; gap: 6px; }
+
+  .user-pill {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    border-radius: 5px;
+    border: 1px solid #2a2a30;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background .15s, border-color .15s;
+    background: transparent;
+    color: #e8e8ec;
+    font-family: inherit;
+    text-align: left;
+  }
+  .user-pill:hover { background: #202024; }
+  .user-pill.active { border-color: var(--uc); background: #202024; }
+
+  .user-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .filter-row { display: flex; flex-wrap: wrap; gap: 5px; }
+
+  .filter-pill {
+    font-size: 10px;
+    font-family: inherit;
+    padding: 4px 9px;
+    border-radius: 20px;
+    border: 1px solid #2a2a30;
+    background: transparent;
+    color: #6b6b78;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .filter-pill:hover { color: #e8e8ec; border-color: #6b6b78; }
+  .filter-pill.active { color: #e8e8ec; border-color: var(--uc); background: rgba(255,255,255,.05); }
+
+  .instructions { font-size: 10px; color: #6b6b78; line-height: 1.9; }
+
+  .clear-btn {
+    width: 100%;
+    background: transparent;
+    border: 1px solid #3a2020;
+    color: #a05050;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .clear-btn:hover { background: #2a1515; border-color: #a05050; color: #d06060; }
+
+  /* zoom indicator */
+  #zoomLabel {
+    font-size: 10px;
+    color: #6b6b78;
+    text-align: center;
+    padding: 6px 0 2px;
+  }
+
+  /* ── CANVAS WRAPPER ── */
+  #canvasWrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    cursor: crosshair;
+    background:
+      radial-gradient(circle at 20% 80%, rgba(60,80,140,.07) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(140,60,100,.07) 0%, transparent 50%),
+      #0e0e10;
+  }
+
+  /* dot grid on the wrapper */
+  #canvasWrap::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: radial-gradient(circle, #2a2a32 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
+    opacity: .5;
+  }
+
+  /* world — scaled container */
+  #world {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    transform-origin: 0 0;
+  }
+
+  /* ── CIRCLES ── */
+  .circle {
+    position: absolute;
+    border-radius: 50%;
+    /* overflow:hidden clips text to circle boundary */
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    cursor: grab;
+    user-select: none;
+    /* centre on x,y */
+    transform: translate(-50%, -50%);
+  }
+  .circle:active { cursor: grabbing; }
+
+  /* inner box — constrained to inscribed square of circle */
+  .circle-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    /* inscribed square = d / sqrt(2); we use slightly less for breathing room */
+    width: var(--inner);
+    height: var(--inner);
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* resize handle */
+  .resize-handle {
+    position: absolute;
+    bottom: 13%;
+    right: 13%;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.18);
+    border: 1.5px solid rgba(255,255,255,.4);
+    cursor: nwse-resize;
+    opacity: 0;
+    transition: opacity .15s;
+    pointer-events: all;
+  }
+  .circle:hover .resize-handle { opacity: 1; }
+
+  .circle-time {
+    font-family: 'DM Mono', monospace;
+    letter-spacing: .04em;
+    opacity: .7;
+    white-space: nowrap;
+    background: rgba(0,0,0,.3);
+    border-radius: 20px;
+    padding: 1px 6px;
+    line-height: 1.7;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+  }
+
+  .circle-comment {
+    font-family: 'Fraunces', serif;
+    font-weight: 300;
+    line-height: 1.25;
+    word-break: break-word;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    max-width: 100%;
+  }
+
+  .circle-user { display: none; }
+
+  .circle.faded { opacity: .07; pointer-events: none; }
+
+  .circle.snap-preview {
+    box-shadow: 0 0 0 3px rgba(255,255,255,.35), 0 0 18px rgba(255,255,255,.12) !important;
+  }
+
+  /* ── empty state ── */
+  #empty {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    text-align: center;
+    pointer-events: none;
+  }
+  #empty .big {
+    font-family: 'Fraunces', serif;
+    font-size: 52px;
+    font-weight: 300;
+    font-style: italic;
+    color: #2a2a32;
+    line-height: 1;
+    margin-bottom: 10px;
+  }
+  #empty .small {
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #3a3a44;
+  }
+
+  /* ── edit modal ── */
+  #editOverlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+  }
+  #editOverlay.open { display: flex; }
+
+  #editBox {
+    background: #18181c;
+    border: 1px solid #3a3a44;
+    border-radius: 8px;
+    padding: 20px;
+    width: 290px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  #editBox .e-label { font-size: 9px; letter-spacing: .15em; text-transform: uppercase; color: #6b6b78; }
+  #editComment {
+    width: 100%;
+    background: #111115;
+    border: 1px solid #2a2a30;
+    border-radius: 4px;
+    color: #e8e8ec;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    resize: none;
+  }
+  #editComment:focus { border-color: #6b6b78; }
+  .edit-meta { font-size: 10px; color: #6b6b78; line-height: 1.6; }
+  .edit-row { display: flex; gap: 8px; }
+  .edit-save {
+    flex: 1;
+    background: #222228;
+    border: 1px solid #4a4a54;
+    color: #e8e8ec;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .edit-save:hover { background: #2c2c34; }
+  .edit-delete {
+    background: transparent;
+    border: 1px solid #3a2020;
+    color: #a05050;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .edit-delete:hover { background: #2a1515; color: #d06060; }
+  .edit-cancel {
+    background: transparent;
+    border: 1px solid #2a2a30;
+    color: #6b6b78;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .edit-cancel:hover { color: #e8e8ec; }
+
+  /* ── tooltip ── */
+  #tooltip {
+    position: fixed;
+    background: #1e1e24;
+    border: 1px solid #2a2a30;
+    color: #e8e8ec;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    padding: 8px 11px;
+    border-radius: 4px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .15s;
+    z-index: 9999;
+    max-width: 230px;
+    white-space: pre-wrap;
+    line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="s-section">
+    <div class="s-label">Size</div>
+    <div class="size-row">
+      <button class="size-btn" data-size="small">S</button>
+      <button class="size-btn active" data-size="medium">M</button>
+      <button class="size-btn" data-size="large">L</button>
+    </div>
+  </div>
+
+  <div class="s-section">
+    <div class="s-label">Comment / Task</div>
+    <textarea class="text-input" id="circleText" rows="3" placeholder="Describe the task..."></textarea>
+  </div>
+
+  <div class="s-section">
+    <div class="s-label">User</div>
+    <div class="user-grid" id="userGrid"></div>
+  </div>
+
+  <div class="s-section">
+    <div class="s-label">Filter by user</div>
+    <div class="filter-row" id="filterRow"></div>
+  </div>
+
+  <div class="s-section">
+    <div class="s-label">How to use</div>
+    <div class="instructions">
+      Right-click canvas → place circle<br>
+      Date &amp; quarter auto-stamped<br>
+      Double-click → edit comment<br>
+      Drag body → move<br>
+      Drag ● handle → resize<br>
+      Scroll wheel → zoom in/out<br>
+      Same-size circles snap edge-to-edge<br>
+      L envelops M envelops S
+    </div>
+  </div>
+
+  <div id="zoomLabel">zoom: 100%</div>
+
+  <div class="s-section">
+    <button class="clear-btn" id="clearBtn">Clear canvas</button>
+  </div>
+</div>
+
+<div id="canvasWrap">
+  <div id="world">
+    <div id="empty">
+      <div class="big">○</div>
+      <div class="small">Click anywhere to place a circle</div>
+    </div>
+  </div>
+</div>
+
+<div id="editOverlay">
+  <div id="editBox">
+    <div class="e-label">Edit comment</div>
+    <textarea id="editComment" rows="4"></textarea>
+    <div class="edit-meta" id="editMeta"></div>
+    <div class="edit-row">
+      <button class="edit-save" id="editSave">Save &amp; update timestamp</button>
+    </div>
+    <div class="edit-row">
+      <button class="edit-cancel" id="editCancel">Cancel</button>
+      <button class="edit-delete" id="editDelete">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+const USERS = [
+  { id: 'u0', name: 'Marco',   h: 210, s: 80, l: 58 },
+  { id: 'u1', name: 'Syafiq',  h: 340, s: 75, l: 60 },
+  { id: 'u2', name: 'Matthew', h: 150, s: 65, l: 52 },
+  { id: 'u3', name: "S'ng",    h:  48, s: 90, l: 55 },
+  { id: 'u4', name: 'CY',      h: 270, s: 70, l: 62 },
+];
+
+const SIZE_DEFAULTS  = { small: 90, medium: 160, large: 240 };
+const SNAP_THRESH    = 24;
+const SAME_SIZE_TOL  = 30;
+const MIN_D          = 50;
+const ZOOM_FACTOR    = 1.1; // multiply/divide per scroll tick
+
+let activeSize  = 'medium';
+let activeUser  = USERS[0];
+let filterUsers = new Set();
+let circles     = [];
+let nextZ       = 100;
+let editTarget  = null;
+let zoom        = 1;
+
+let dragData   = null;
+let resizeData = null;
+let panDragData = null; // middle-mouse pan
+let didDrag    = false;
+
+const canvasWrap  = document.getElementById('canvasWrap');
+const world       = document.getElementById('world');
+const empty       = document.getElementById('empty');
+const circleText  = document.getElementById('circleText');
+const tooltip     = document.getElementById('tooltip');
+const editOverlay = document.getElementById('editOverlay');
+const editComment = document.getElementById('editComment');
+const editMeta    = document.getElementById('editMeta');
+const zoomLabel   = document.getElementById('zoomLabel');
+
+/* ── colour helpers ── */
+function uc(u, l, a=1) { return `hsla(${u.h},${u.s}%,${l}%,${a})`; }
+function uColor(u, a=1) { return uc(u, u.l, a); }
+function uBg(u)          { return uc(u, u.l-10, 0.13); }
+function uText(u)        { return uc(u, Math.min(u.l+22, 92)); }
+
+/* ── timestamp ── */
+function stamp() {
+  const d   = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const q   = 'Q' + (Math.floor(d.getMonth()/3)+1);
+  const yr  = d.getFullYear();
+  const full = `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${yr} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return { full, badge: `${q} ${yr}` };
+}
+
+/* ── font sizes scale with diameter ── */
+function fontsFor(d) {
+  const base = d / 160;
+  return {
+    fTime:    Math.max(7,  Math.round(9  * base)),
+    fComment: Math.max(8,  Math.round(13 * base)),
+    fUser:    Math.max(7,  Math.round(9  * base)),
+  };
+}
+
+/* inscribed square side (with breathing room) */
+function innerSize(d) { return Math.floor(d * 0.66); }
+
+/* ── build sidebar ── */
+const userGrid  = document.getElementById('userGrid');
+const filterRow = document.getElementById('filterRow');
+
+USERS.forEach((u, i) => {
+  const col = uColor(u);
+
+  const pill = document.createElement('button');
+  pill.className = 'user-pill' + (i===0?' active':'');
+  pill.style.setProperty('--uc', col);
+  pill.innerHTML = `<span class="user-dot" style="background:${col}"></span>${u.name}`;
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('.user-pill').forEach(p=>p.classList.remove('active'));
+    pill.classList.add('active');
+    activeUser = u;
+  });
+  userGrid.appendChild(pill);
+
+  const fp = document.createElement('button');
+  fp.className = 'filter-pill';
+  fp.style.setProperty('--uc', col);
+  fp.textContent = u.name;
+  fp.addEventListener('click', () => {
+    if (filterUsers.has(u.id)) { filterUsers.delete(u.id); fp.classList.remove('active'); }
+    else                        { filterUsers.add(u.id);    fp.classList.add('active'); }
+    applyFilter();
+  });
+  filterRow.appendChild(fp);
+});
+
+/* ── size buttons ── */
+document.querySelectorAll('.size-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.size-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    activeSize = btn.dataset.size;
+  });
+});
+
+/* ── clear ── */
+document.getElementById('clearBtn').addEventListener('click', () => {
+  circles.forEach(c=>c.el.remove());
+  circles = [];
+  empty.style.display = '';
+});
+
+/* ── pan + zoom state ── */
+let panX = 0, panY = 0;
+
+function commitTransform() {
+  world.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  const pct = zoom * 100;
+  zoomLabel.textContent = pct >= 1 && pct < 100000
+    ? `zoom: ${Math.round(pct)}%`
+    : `zoom: ${pct.toExponential(1)}%`;
+}
+
+/* zoom toward mouse position in canvasWrap coords */
+function zoomAt(factor, mouseX, mouseY) {
+  const wx = (mouseX - panX) / zoom;
+  const wy = (mouseY - panY) / zoom;
+  zoom *= factor;
+  panX = mouseX - wx * zoom;
+  panY = mouseY - wy * zoom;
+  commitTransform();
+}
+
+canvasWrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect   = canvasWrap.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
+  zoomAt(factor, mouseX, mouseY);
+}, { passive: false });
+
+/* ── mouse coords in world space (accounts for pan + zoom) ── */
+function toWorld(clientX, clientY) {
+  const rect = canvasWrap.getBoundingClientRect();
+  return {
+    x: (clientX - rect.left - panX) / zoom,
+    y: (clientY - rect.top  - panY) / zoom,
+  };
+}
+
+/* ── place circle on right-click ── */
+canvasWrap.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (e.target.closest('.circle')) return;
+  const { x, y } = toWorld(e.clientX, e.clientY);
+  placeCircle(x, y, SIZE_DEFAULTS[activeSize], activeUser, circleText.value.trim(), stamp());
+});
+
+/* ── apply styles based on diameter ── */
+function styleCircle(data) {
+  const { el, d, user, inner, timeEl, commentEl, userEl } = data;
+  const ins = innerSize(d);
+  el.style.width  = d + 'px';
+  el.style.height = d + 'px';
+  el.style.background = uBg(user);
+  el.style.border     = `2px solid ${uColor(user)}`;
+  el.style.boxShadow  = `0 0 0 1px ${uColor(user,.15)}, inset 0 0 30px ${uColor(user,.06)}`;
+
+  // update inner box size
+  inner.style.setProperty('--inner', ins + 'px');
+  inner.style.width  = ins + 'px';
+  inner.style.height = ins + 'px';
+
+  const f = fontsFor(d);
+  timeEl.style.fontSize    = f.fTime    + 'px';
+  commentEl.style.fontSize = f.fComment + 'px';
+  userEl.style.fontSize    = f.fUser    + 'px';
+}
+
+function placeCircle(x, y, d, user, comment, ts) {
+  const el = document.createElement('div');
+  el.className = 'circle';
+  el.style.left   = x + 'px';
+  el.style.top    = y + 'px';
+  el.style.zIndex = 100 + nextZ++;
+
+  /* inner text box — constrained to inscribed square */
+  const inner = document.createElement('div');
+  inner.className = 'circle-inner';
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'circle-time';
+  timeEl.style.color = uColor(user, .85);
+  timeEl.textContent = ts.badge;
+
+  const commentEl = document.createElement('span');
+  commentEl.className = 'circle-comment';
+  commentEl.style.color = uText(user);
+  commentEl.textContent = comment || '—';
+
+  const userEl = document.createElement('span');
+  userEl.className = 'circle-user';
+  userEl.style.color = uColor(user, .7);
+  userEl.textContent = user.name;
+
+  inner.appendChild(timeEl);
+  inner.appendChild(commentEl);
+  inner.appendChild(userEl);
+
+  const handle = document.createElement('div');
+  handle.className = 'resize-handle';
+
+  el.appendChild(inner);
+  el.appendChild(handle);
+  world.appendChild(el);
+
+  const data = { el, x, y, d, user, comment, ts, inner, timeEl, commentEl, userEl, handle };
+  circles.push(data);
+  styleCircle(data);
+
+  /* drag body */
+  el.addEventListener('mousedown', e => {
+    if (e.target === handle) return;
+    e.stopPropagation();
+    didDrag = false;
+    const wx = data.x, wy = data.y;
+    const wm = toWorld(e.clientX, e.clientY);
+    dragData = { data, offX: wm.x - wx, offY: wm.y - wy };
+    el.style.zIndex = 9000 + nextZ++;
+  });
+
+  /* double-click edit */
+  el.addEventListener('dblclick', e => {
+    if (e.target === handle) return;
+    e.stopPropagation();
+    openEdit(data);
+  });
+
+  /* resize handle */
+  handle.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    resizeData = { data, startD: data.d };
+    canvasWrap.style.cursor = 'nwse-resize';
+  });
+
+  /* tooltip */
+  el.addEventListener('mouseenter', ev => showTip(ev, `${ts.full}\n${user.name}\n${comment || '—'}`));
+  el.addEventListener('mouseleave', hideTip);
+
+  empty.style.display = 'none';
+  applyFilter();
+  return data;
+}
+
+/* ── middle-mouse pan ── */
+canvasWrap.addEventListener('mousedown', e => {
+  if (e.button !== 1) return;
+  e.preventDefault();
+  panDragData = { startX: e.clientX, startY: e.clientY, startPanX: panX, startPanY: panY };
+  canvasWrap.style.cursor = 'grabbing';
+});
+
+/* ── mouse move ── */
+window.addEventListener('mousemove', e => {
+  /* pan with middle mouse */
+  if (panDragData) {
+    panX = panDragData.startPanX + (e.clientX - panDragData.startX);
+    panY = panDragData.startPanY + (e.clientY - panDragData.startY);
+    commitTransform();
+    return;
+  }
+
+  const wm = toWorld(e.clientX, e.clientY);
+
+  /* resize — distance from centre to mouse defines new radius */
+  if (resizeData) {
+    const { data } = resizeData;
+    const newR = Math.max(MIN_D / 2, Math.hypot(wm.x - data.x, wm.y - data.y));
+    data.d = newR * 2;
+    styleCircle(data);
+    return;
+  }
+
+  /* drag */
+  if (dragData) {
+    didDrag = true;
+    const { data, offX, offY } = dragData;
+    let nx = wm.x - offX;
+    let ny = wm.y - offY;
+
+    let snapped = false;
+    for (const other of circles) {
+      if (other === data) continue;
+      if (other.el.classList.contains('faded')) continue;
+
+      const dist      = Math.hypot(nx - other.x, ny - other.y);
+      const touchDist = (data.d + other.d) / 2;
+      const gap       = dist - touchDist;
+
+      if (gap < SNAP_THRESH && gap > -4) {
+        const angle = Math.atan2(ny - other.y, nx - other.x);
+        nx = other.x + Math.cos(angle) * touchDist;
+        ny = other.y + Math.sin(angle) * touchDist;
+        snapped = true;
+        other.el.classList.add('snap-preview');
+      } else {
+        other.el.classList.remove('snap-preview');
+      }
+    }
+
+    data.x = nx;
+    data.y = ny;
+    data.el.style.left = nx + 'px';
+    data.el.style.top  = ny + 'px';
+
+    if (!snapped) circles.forEach(c => { if (c !== data) c.el.classList.remove('snap-preview'); });
+  }
+});
+
+window.addEventListener('mouseup', e => {
+  if (panDragData) {
+    panDragData = null;
+    canvasWrap.style.cursor = '';
+  }
+  if (resizeData) {
+    canvasWrap.style.cursor = '';
+    resizeData = null;
+  }
+  if (dragData) {
+    circles.forEach(c => c.el.classList.remove('snap-preview'));
+    dragData = null;
+  }
+});
+
+/* ── filter ── */
+function applyFilter() {
+  circles.forEach(({ el, user }) => {
+    el.classList.toggle('faded', filterUsers.size > 0 && !filterUsers.has(user.id));
+  });
+}
+
+/* ── edit modal ── */
+function openEdit(data) {
+  editTarget = data;
+  editComment.value = data.comment;
+  editMeta.textContent = `Created: ${data.ts.full}  ·  ${data.user.name}`;
+  editOverlay.classList.add('open');
+  editComment.focus();
+}
+
+document.getElementById('editSave').addEventListener('click', () => {
+  if (!editTarget) return;
+  const newComment = editComment.value.trim();
+  const newTs      = stamp();
+  editTarget.comment               = newComment;
+  editTarget.ts                    = newTs;
+  editTarget.commentEl.textContent = newComment || '—';
+  editTarget.timeEl.textContent    = newTs.badge;
+  closeEdit();
+});
+
+document.getElementById('editDelete').addEventListener('click', () => {
+  if (!editTarget) return;
+  editTarget.el.remove();
+  circles = circles.filter(c => c !== editTarget);
+  if (!circles.length) empty.style.display = '';
+  closeEdit();
+});
+
+document.getElementById('editCancel').addEventListener('click', closeEdit);
+editOverlay.addEventListener('click', e => { if (e.target === editOverlay) closeEdit(); });
+
+function closeEdit() {
+  editOverlay.classList.remove('open');
+  editTarget = null;
+}
+
+/* ── tooltip ── */
+function showTip(e, text) { tooltip.textContent = text; tooltip.style.opacity = '1'; moveTip(e); }
+function hideTip()         { tooltip.style.opacity = '0'; }
+function moveTip(e)        { tooltip.style.left = (e.clientX+14)+'px'; tooltip.style.top = (e.clientY-8)+'px'; }
+window.addEventListener('mousemove', e => { if (tooltip.style.opacity==='1') moveTip(e); });
+</script>
+</body>
+</html>
