@@ -346,6 +346,23 @@
   }
   .edit-cancel:hover { color: #e8e8ec; }
 
+  .circle.selected {
+    outline: 2px dashed rgba(255,255,255,.6);
+    outline-offset: 4px;
+  }
+
+  /* ── ghost circle (draw preview) ── */
+  #ghost {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    display: none;
+    border: 2px dashed rgba(255,255,255,.5);
+    background: rgba(255,255,255,.04);
+    transition: none;
+  }
+
   /* ── tooltip ── */
   #tooltip {
     position: fixed;
@@ -370,15 +387,6 @@
 
 <div id="sidebar">
   <div class="s-section">
-    <div class="s-label">Size</div>
-    <div class="size-row">
-      <button class="size-btn" data-size="small">S</button>
-      <button class="size-btn active" data-size="medium">M</button>
-      <button class="size-btn" data-size="large">L</button>
-    </div>
-  </div>
-
-  <div class="s-section">
     <div class="s-label">Comment / Task</div>
     <textarea class="text-input" id="circleText" rows="3" placeholder="Describe the task..."></textarea>
   </div>
@@ -396,14 +404,15 @@
   <div class="s-section">
     <div class="s-label">How to use</div>
     <div class="instructions">
-      Right-click canvas → place circle<br>
+      Right-click + drag → draw circle<br>
+      Release → place it<br>
       Date &amp; quarter auto-stamped<br>
       Double-click → edit comment<br>
-      Drag body → move<br>
+      Left-drag body → move<br>
       Drag ● handle → resize<br>
-      Scroll wheel → zoom in/out<br>
-      Same-size circles snap edge-to-edge<br>
-      L envelops M envelops S
+      Scroll wheel → zoom to cursor<br>
+      Middle-click drag → pan canvas<br>
+      Circles snap edge-to-edge
     </div>
   </div>
 
@@ -416,9 +425,10 @@
 
 <div id="canvasWrap">
   <div id="world">
+    <div id="ghost"></div>
     <div id="empty">
       <div class="big">○</div>
-      <div class="small">Click anywhere to place a circle</div>
+      <div class="small">Right-click &amp; drag to draw a circle</div>
     </div>
   </div>
 </div>
@@ -449,19 +459,18 @@ const USERS = [
   { id: 'u4', name: 'CY',      h: 270, s: 70, l: 62 },
 ];
 
-const SIZE_DEFAULTS  = { small: 90, medium: 160, large: 240 };
 const SNAP_THRESH    = 24;
 const SAME_SIZE_TOL  = 30;
 const MIN_D          = 50;
 const ZOOM_FACTOR    = 1.1; // multiply/divide per scroll tick
 
-let activeSize  = 'medium';
 let activeUser  = USERS[0];
 let filterUsers = new Set();
 let circles     = [];
 let nextZ       = 100;
 let editTarget  = null;
 let zoom        = 1;
+let selectedCircle = null; // circle data currently selected
 
 let dragData   = null;
 let resizeData = null;
@@ -537,15 +546,6 @@ USERS.forEach((u, i) => {
   filterRow.appendChild(fp);
 });
 
-/* ── size buttons ── */
-document.querySelectorAll('.size-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.size-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    activeSize = btn.dataset.size;
-  });
-});
-
 /* ── clear ── */
 document.getElementById('clearBtn').addEventListener('click', () => {
   circles.forEach(c=>c.el.remove());
@@ -592,13 +592,26 @@ function toWorld(clientX, clientY) {
   };
 }
 
-/* ── place circle on right-click ── */
-canvasWrap.addEventListener('contextmenu', e => {
-  e.preventDefault();
+/* ── right-click drag to draw a new circle ── */
+let drawData = null; // { originX, originY } in world coords
+const ghost  = document.getElementById('ghost');
+
+canvasWrap.addEventListener('mousedown', e => {
+  if (e.button !== 2) return;
   if (e.target.closest('.circle')) return;
-  const { x, y } = toWorld(e.clientX, e.clientY);
-  placeCircle(x, y, SIZE_DEFAULTS[activeSize], activeUser, circleText.value.trim(), stamp());
+  e.preventDefault();
+  const wm = toWorld(e.clientX, e.clientY);
+  drawData = { wx: wm.x, wy: wm.y };
+  // seed ghost at origin, zero size
+  ghost.style.display = 'block';
+  ghost.style.left    = wm.x + 'px';
+  ghost.style.top     = wm.y + 'px';
+  ghost.style.width   = '0px';
+  ghost.style.height  = '0px';
+  ghost.style.borderColor = `hsla(${activeUser.h},${activeUser.s}%,${activeUser.l}%,.7)`;
 });
+
+canvasWrap.addEventListener('contextmenu', e => { e.preventDefault(); });
 
 /* ── apply styles based on diameter ── */
 function styleCircle(data) {
@@ -666,6 +679,12 @@ function placeCircle(x, y, d, user, comment, ts) {
   el.addEventListener('mousedown', e => {
     if (e.target === handle) return;
     e.stopPropagation();
+    // select this circle
+    if (selectedCircle && selectedCircle !== data) {
+      selectedCircle.el.classList.remove('selected');
+    }
+    selectedCircle = data;
+    el.classList.add('selected');
     didDrag = false;
     const wx = data.x, wy = data.y;
     const wm = toWorld(e.clientX, e.clientY);
@@ -699,6 +718,13 @@ function placeCircle(x, y, d, user, comment, ts) {
 
 /* ── middle-mouse pan ── */
 canvasWrap.addEventListener('mousedown', e => {
+  if (e.button === 0 && !e.target.closest('.circle')) {
+    // deselect when clicking empty space
+    if (selectedCircle) {
+      selectedCircle.el.classList.remove('selected');
+      selectedCircle = null;
+    }
+  }
   if (e.button !== 1) return;
   e.preventDefault();
   panDragData = { startX: e.clientX, startY: e.clientY, startPanX: panX, startPanY: panY };
@@ -716,6 +742,18 @@ window.addEventListener('mousemove', e => {
   }
 
   const wm = toWorld(e.clientX, e.clientY);
+
+  /* draw ghost */
+  if (drawData) {
+    const r = Math.hypot(wm.x - drawData.wx, wm.y - drawData.wy);
+    const d = Math.max(MIN_D, r * 2);
+    ghost.style.width  = d + 'px';
+    ghost.style.height = d + 'px';
+    // keep ghost centred on origin
+    ghost.style.left = drawData.wx + 'px';
+    ghost.style.top  = drawData.wy + 'px';
+    return;
+  }
 
   /* resize — distance from centre to mouse defines new radius */
   if (resizeData) {
@@ -763,6 +801,16 @@ window.addEventListener('mousemove', e => {
 });
 
 window.addEventListener('mouseup', e => {
+  /* finalise drawn circle on right-mouse release */
+  if (drawData && e.button === 2) {
+    const wm = toWorld(e.clientX, e.clientY);
+    const r  = Math.hypot(wm.x - drawData.wx, wm.y - drawData.wy);
+    const d  = Math.max(MIN_D, r * 2);
+    ghost.style.display = 'none';
+    placeCircle(drawData.wx, drawData.wy, d, activeUser, circleText.value.trim(), stamp());
+    drawData = null;
+    return;
+  }
   if (panDragData) {
     panDragData = null;
     canvasWrap.style.cursor = '';
@@ -783,6 +831,18 @@ function applyFilter() {
     el.classList.toggle('faded', filterUsers.size > 0 && !filterUsers.has(user.id));
   });
 }
+
+/* ── keyboard delete selected circle ── */
+window.addEventListener('keydown', e => {
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  // don't interfere with text inputs
+  if (document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT') return;
+  if (!selectedCircle) return;
+  selectedCircle.el.remove();
+  circles = circles.filter(c => c !== selectedCircle);
+  selectedCircle = null;
+  if (!circles.length) empty.style.display = '';
+});
 
 /* ── edit modal ── */
 function openEdit(data) {
@@ -808,6 +868,7 @@ document.getElementById('editDelete').addEventListener('click', () => {
   if (!editTarget) return;
   editTarget.el.remove();
   circles = circles.filter(c => c !== editTarget);
+  if (selectedCircle === editTarget) selectedCircle = null;
   if (!circles.length) empty.style.display = '';
   closeEdit();
 });
